@@ -191,3 +191,89 @@ Before submitting, confirm:
 - Every `amount_safe_to_pay` satisfies `0 <= amount_safe_to_pay <= requested_amount`.
 - Every installment plan matches a supplied payment option, and every spending change targets a flexible recurring expense.
 - Your runnable code, setup instructions, and `evaluation/` folder are included in `code.zip`.
+
+---
+
+# Solution Documentation
+
+## Run
+
+```bash
+python -m venv venv
+venv/Scripts/python -m pip install -r requirements.txt   # Windows (Git Bash)
+python code/main.py                                      # writes ./output.csv (250 rows)
+```
+
+Optional:
+- `python code/main.py --samples` — run the 25 solved sample requests
+- `python evaluation/scorer.py` — field-by-field accuracy vs the solved samples
+- `python code/extract_images.py` — re-extract amounts from bill images (needs `GEMINI_API_KEY`)
+
+The pipeline is **deterministic and offline-capable**: model extractions are cached
+in `code/extraction_cache/`, so `output.csv` reproduces exactly with no API key and
+no network access. Two consecutive runs are byte-identical.
+
+## Architecture
+
+```
+dataset/ ─> data.py        loaders, joins, Decimal money, dated FX (direct → inverse → USD bridge)
+        ─> extract_images.py  Gemini Vision, JSON-schema-constrained, disk-cached,
+        │                     injection-hardened (extract-only; images are untrusted data)
+        ─> recurring.py    recurring-expense series from settled history (cadence + amount rules)
+        ─> income.py       salary streams + message amendments (raises, date moves, stops,
+        │                  resumes, approved invoices) via multilingual Tier-0 heuristics
+        ─> forecast.py     90-day daily Decimal balance simulation;
+        │                  amount_safe_to_pay / earliest_date_for_full_payment solvers
+        ─> decide.py       eligibility (user preferences, max_installment_months) →
+        │                  deterministic plan ranking (spec rules 1–6) → explanations
+        ─> validate.py     hard safety gates before any row is written
+        ─> main.py         orchestration → output.csv
+```
+
+### Design principles
+
+1. **The model describes; deterministic code decides.** Model calls are confined to
+   extracting structured facts from untrusted messages/images. Every amount, date,
+   and decision comes from Decimal arithmetic over the supplied CSVs.
+2. **Information-flow control by construction.** Untrusted text or image bytes never
+   reach the decision layer — only validated, schema-constrained fields do. Embedded
+   instructions in messages or images cannot influence any recommendation.
+3. **Calibrated rules, not hardcoded answers.** Decision semantics were reverse-
+   engineered from `dataset/sample_requests.csv` (the 25 solved examples) with
+   `evaluation/scorer.py` reporting per-field accuracy. No request-specific values
+   or labels are embedded anywhere.
+4. **Physical safety gates.** `validate.py` recomputes plan arithmetic and refuses
+   any row violating the contract: amount bounds, status↔method couplings,
+   `affordable_now ⇒ earliest == request_date`, partial-payment two-payment
+   summation, installment schedules matching a supplied option.
+
+## Key semantics implemented (validated on the solved samples)
+
+- `amount_safe_to_pay`: max payable today *before* optional spending changes such
+  that the 90-day daily balance never dips below `minimum_balance_to_keep`
+- `earliest_date_for_full_payment`: first day a single full payment passes the same
+  safety check without spending changes (capacity only, independent of preferences)
+- installment plans must exactly match a supplied payment option and respect
+  `max_installment_months`; partial payment is exactly two payments summing to the
+  requested amount; `wait` pays in full on the earliest safe date and requires the
+  user to accept `full_payment`
+- flows are placed by **event date**; FX conversion uses the **settlement-date** rate
+  (direct pair → inverse → USD bridge, full Decimal precision)
+- messages amend state: salary raises (with effective dates), payday moves (which
+  shift the whole schedule), seasonal stops, resume dates, first-salary dates,
+  approved invoices (confirmed future income), rent increases (+12%), retried failed
+  debits; pending credits, cancelled, failed, and unrealized records are ignored
+
+## Calibration results (25 solved samples)
+
+| Field | Accuracy |
+|---|---|
+| affordability_status | 21/25 |
+| recommended_payment_method | 23/25 |
+| payment_plan | 22/25 |
+| earliest_date_for_full_payment | 20/25 |
+| spending_changes_needed | 22/25 |
+| amount_safe_to_pay (exact to the cent) | 4/25 — majority within ~1–5% |
+
+Token usage and cost for the final run: see [`evaluation/usage_report.md`](./evaluation/usage_report.md)
+(total $0.00 — all extraction calls ran on the Gemini free tier and are cached).

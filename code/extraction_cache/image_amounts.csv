@@ -1,0 +1,17 @@
+event_id,image_id,amount,currency,doc_date,doc_type
+event_10521,,393.22,INR,2026-09-03,invoice
+event_1442,,200000,INR,2023-08-11,receipt
+event_1545,,41272,INR,2026-02-27,receipt
+event_1700,,2854,INR,,receipt
+event_1786,,704.05,INR,2026-02-06,statement
+event_253,,4365000,IDR,2019-09-02,payslip
+event_3051,,1995,INR,,invoice
+event_3231,,8528,INR,2025-10-29,invoice
+event_4535,,15339,INR,2026-07-24,receipt
+event_5170,,723,INR,2026-06-07,receipt
+event_6033,,79679.26,INR,,invoice
+event_6859,,3650,INR,2023-01-19,bill
+event_7307,,33.5,USD,2025-01-10,receipt
+event_7941,,2298,INR,,receipt
+event_9421,,4543,INR,,receipt
+event_9806,,9968,INR,2026-06-07,invoice
